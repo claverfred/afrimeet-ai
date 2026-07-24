@@ -1,0 +1,7 @@
+# Developer tooling: testing, linting, formatting.
+
+pytest>=8.0
+pytest-cov>=5.0
+black>=24.0
+ruff>=0.4
+isort>=5.13

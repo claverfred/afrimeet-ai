@@ -1,0 +1,11 @@
+# Core, lightweight dependencies needed by almost every part of the project.
+# Installed by default when you run `pip install -r requirements/base.txt`.
+
+numpy>=1.26,<2.0
+pandas>=2.2
+pyyaml>=6.0
+python-dotenv>=1.0
+tqdm>=4.66
+requests>=2.31
+pydantic>=2.7
+loguru>=0.7

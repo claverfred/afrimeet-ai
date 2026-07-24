@@ -1,0 +1,18 @@
+# Machine learning / ASR fine-tuning stack (Phases 2-5: data prep, baseline,
+# fine-tuning, evaluation). Heavier and slower to install than base.txt.
+#
+# By default this pulls the CPU build of PyTorch. For an NVIDIA GPU box, install
+# torch separately first from https://pytorch.org/get-started/locally/ (pick your
+# CUDA version) and then run this file — pip will see torch is already satisfied.
+
+torch>=2.2
+torchaudio>=2.2
+transformers>=4.40
+datasets>=2.19
+accelerate>=0.30
+evaluate>=0.4
+jiwer>=3.0            # Word/Character Error Rate
+librosa>=0.10
+soundfile>=0.12
+sacrebleu>=2.4         # BLEU for translation evaluation
+rouge-score>=0.1.2     # ROUGE for summarization evaluation

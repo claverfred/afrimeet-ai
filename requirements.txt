@@ -1,0 +1,8 @@
+# Convenience file: installs everything (base + ml + api + dev).
+# For a lighter install, use the individual files in requirements/ instead, e.g.:
+#   pip install -r requirements/base.txt -r requirements/dev.txt
+
+-r requirements/base.txt
+-r requirements/ml.txt
+-r requirements/api.txt
+-r requirements/dev.txt

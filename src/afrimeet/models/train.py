@@ -1,0 +1,189 @@
+"""Phase 4 — Fine-tune Whisper on domain-specific (conference) speech.
+
+Uses HF `Seq2SeqTrainer` on top of a manifest-based dataset. Hyperparameters
+(learning rate, batch size, epochs, ...) come from `configs/config.yaml`.
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import evaluate as hf_evaluate
+import torch
+from datasets import Dataset, DatasetDict
+from transformers import (
+    Seq2SeqTrainer,
+    Seq2SeqTrainingArguments,
+    WhisperForConditionalGeneration,
+    WhisperProcessor,
+)
+
+from afrimeet.utils.config import load_config
+from afrimeet.utils.logging import logger
+
+
+def _load_split_as_hf_dataset(manifest_path: Path) -> Dataset:
+    import pandas as pd
+    import soundfile as sf
+
+    df = pd.read_csv(manifest_path)
+    base_dir = manifest_path.parent
+
+    def _load_audio(row):
+        signal, sr = sf.read(base_dir / row["audio_path"], dtype="float32")
+        return {"array": signal, "sampling_rate": sr}
+
+    records = [
+        {"audio": _load_audio(row), "transcript": row["transcript"]} for _, row in df.iterrows()
+    ]
+    return Dataset.from_list(records)
+
+
+def build_dataset(
+    processed_dir: Path, train_split: str = "train", eval_split: str = "test"
+) -> DatasetDict:
+    """Collects every dataset under `data/processed/*/train` (and `*/test`) into a
+    single combined HF DatasetDict."""
+    train_manifests = sorted(processed_dir.glob(f"*/{train_split}/manifest.csv"))
+    eval_manifests = sorted(processed_dir.glob(f"*/{eval_split}/manifest.csv"))
+
+    if not train_manifests:
+        raise FileNotFoundError(
+            f"No training manifests found under {processed_dir}/*/{train_split}/manifest.csv "
+            "— run scripts/download_data.py and scripts/prepare_dataset.py first."
+        )
+
+    from datasets import concatenate_datasets
+
+    train_ds = concatenate_datasets([_load_split_as_hf_dataset(p) for p in train_manifests])
+    eval_ds = (
+        concatenate_datasets([_load_split_as_hf_dataset(p) for p in eval_manifests])
+        if eval_manifests
+        else train_ds.select(range(min(50, len(train_ds))))
+    )
+    return DatasetDict(train=train_ds, test=eval_ds)
+
+
+@dataclass
+class WhisperDataCollator:
+    processor: WhisperProcessor
+
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
+        input_features = [{"input_features": f["input_features"]} for f in features]
+        batch = self.processor.feature_extractor.pad(input_features, return_tensors="pt")
+
+        label_features = [{"input_ids": f["labels"]} for f in features]
+        labels_batch = self.processor.tokenizer.pad(label_features, return_tensors="pt")
+        labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
+
+        if (labels[:, 0] == self.processor.tokenizer.bos_token_id).all().item():
+            labels = labels[:, 1:]
+
+        batch["labels"] = labels
+        return batch
+
+
+def prepare_features(dataset: DatasetDict, processor: WhisperProcessor) -> DatasetDict:
+    def _prepare(example):
+        audio = example["audio"]
+        example["input_features"] = processor.feature_extractor(
+            audio["array"], sampling_rate=audio["sampling_rate"]
+        ).input_features[0]
+        example["labels"] = processor.tokenizer(example["transcript"]).input_ids
+        return example
+
+    return dataset.map(_prepare, remove_columns=dataset["train"].column_names, num_proc=1)
+
+
+def make_compute_metrics(processor: WhisperProcessor):
+    wer_metric = hf_evaluate.load("wer")
+    cer_metric = hf_evaluate.load("cer")
+
+    def compute_metrics(pred):
+        pred_ids = pred.predictions
+        label_ids = pred.label_ids
+        label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
+
+        pred_str = processor.batch_decode(pred_ids, skip_special_tokens=True)
+        label_str = processor.batch_decode(label_ids, skip_special_tokens=True)
+
+        return {
+            "wer": wer_metric.compute(predictions=pred_str, references=label_str),
+            "cer": cer_metric.compute(predictions=pred_str, references=label_str),
+        }
+
+    return compute_metrics
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Fine-tune Whisper on conference speech.")
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--base-model", default=None, help="Override config whisper.baseline_model")
+    args = parser.parse_args()
+
+    config = load_config(args.config) if args.config else load_config()
+    processed_dir = Path(config["paths"]["data_processed"])
+    finetuned_name = config["whisper"]["finetuned_model_name"]
+    output_dir = Path(config["paths"]["models_finetuned"]) / finetuned_name
+    base_model = args.base_model or config["whisper"]["baseline_model"]
+    language = config["whisper"]["language"]
+    task = config["whisper"]["task"]
+    train_cfg = config["training"]
+
+    logger.info(f"Base model: {base_model}")
+    dataset = build_dataset(processed_dir)
+    logger.info(f"Train examples: {len(dataset['train'])}, eval examples: {len(dataset['test'])}")
+
+    processor = WhisperProcessor.from_pretrained(base_model, language=language, task=task)
+    dataset = prepare_features(dataset, processor)
+
+    model = WhisperForConditionalGeneration.from_pretrained(base_model)
+    model.generation_config.language = language
+    model.generation_config.task = task
+    model.generation_config.forced_decoder_ids = None
+    if train_cfg.get("gradient_checkpointing"):
+        model.gradient_checkpointing_enable()
+
+    data_collator = WhisperDataCollator(processor=processor)
+
+    training_args = Seq2SeqTrainingArguments(
+        output_dir=str(output_dir),
+        per_device_train_batch_size=train_cfg["train_batch_size"],
+        per_device_eval_batch_size=train_cfg["eval_batch_size"],
+        learning_rate=float(train_cfg["learning_rate"]),
+        warmup_steps=train_cfg["warmup_steps"],
+        num_train_epochs=train_cfg["num_train_epochs"],
+        fp16=train_cfg["fp16"] and torch.cuda.is_available(),
+        eval_strategy="steps",
+        eval_steps=train_cfg["eval_steps"],
+        save_steps=train_cfg["save_steps"],
+        logging_steps=train_cfg["logging_steps"],
+        predict_with_generate=True,
+        generation_max_length=225,
+        report_to=[],
+        load_best_model_at_end=True,
+        metric_for_best_model="wer",
+        greater_is_better=False,
+    )
+
+    trainer = Seq2SeqTrainer(
+        args=training_args,
+        model=model,
+        train_dataset=dataset["train"],
+        eval_dataset=dataset["test"],
+        data_collator=data_collator,
+        compute_metrics=make_compute_metrics(processor),
+        tokenizer=processor.feature_extractor,
+    )
+
+    trainer.train()
+    trainer.save_model(str(output_dir))
+    processor.save_pretrained(str(output_dir))
+    logger.info(f"Fine-tuned model saved to {output_dir}")
+
+
+if __name__ == "__main__":
+    main()

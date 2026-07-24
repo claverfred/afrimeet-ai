@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Data (never commit raw/derived data)
+data/raw/*
+data/interim/*
+data/processed/*
+data/external/*
+!data/**/.gitkeep
+
+# Models & checkpoints (large binaries)
+models/baseline/*
+models/finetuned/*
+!models/**/.gitkeep
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+
+# Reports / generated artifacts
+reports/figures/*
+reports/metrics/*
+!reports/**/.gitkeep
+mlruns/
+wandb/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Jupyter
+*.ipynb_checkpoints
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend (web/)
+web/node_modules/
+web/.next/
+web/dist/
+
+# Docker
+*.log

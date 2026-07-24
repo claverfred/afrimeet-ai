@@ -1,0 +1,47 @@
+# Central configuration for the AfriMeet AI pipeline.
+# Loaded via afrimeet.utils.config.load_config().
+
+seed: 42
+
+paths:
+  data_raw: data/raw
+  data_interim: data/interim
+  data_processed: data/processed
+  data_external: data/external
+  models_baseline: models/baseline
+  models_finetuned: models/finetuned
+  reports_metrics: reports/metrics
+  reports_figures: reports/figures
+
+data:
+  # Hugging Face datasets used for Phase 2 (public data).
+  datasets:
+    - name: mozilla-foundation/common_voice_17_0
+      config: sw          # Swahili
+      splits: [train, validation, test]
+    - name: google/fleurs
+      config: sw_ke
+      splits: [train, validation, test]
+  sample_rate: 16000
+  max_audio_seconds: 30
+
+whisper:
+  baseline_model: openai/whisper-small
+  finetuned_model_name: afrimeet-whisper-small-sw-en
+  language: sw
+  task: transcribe
+
+training:
+  learning_rate: 1.0e-5
+  train_batch_size: 8
+  eval_batch_size: 8
+  num_train_epochs: 3
+  warmup_steps: 500
+  fp16: true
+  gradient_checkpointing: true
+  eval_steps: 500
+  save_steps: 500
+  logging_steps: 50
+
+evaluation:
+  metrics: [wer, cer]
