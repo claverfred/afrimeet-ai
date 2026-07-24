@@ -16,20 +16,25 @@ paths:
 data:
   # Hugging Face datasets used for Phase 2 (public data).
   #
-  # google/fleurs is ungated — downloads with no login. mozilla-foundation/common_voice_17_0
-  # is GATED: you must (1) accept its terms at
-  # https://huggingface.co/datasets/mozilla-foundation/common_voice_17_0 while logged in,
-  # and (2) authenticate locally/in Colab (`huggingface-cli login` or `huggingface_hub.login()`,
-  # or set HUGGINGFACE_TOKEN in .env). Uncomment it below once both are done — until then,
-  # leaving it in the list makes download_data.py fail for that dataset (it logs the error
-  # and continues, so it fails quietly rather than crashing the whole run).
+  # Common Voice supplies training volume/diversity (crowdsourced, many speakers).
+  # FLEURS contributes ONLY its test split, used purely as a held-out evaluation
+  # benchmark — never trained on — so WER/CER are comparable to Whisper's own
+  # published FLEURS numbers. build_dataset() in afrimeet/models/train.py combines
+  # every dataset's `train` split for training and every dataset's `test` split for
+  # eval, so this split split across datasets is what makes that separation work.
+  #
+  # Common Voice is GATED: you must (1) accept its terms at
+  # https://huggingface.co/datasets/mozilla-foundation/common_voice_17_0 while logged
+  # in, and (2) authenticate locally/in Colab (`huggingface-cli login`, the notebook's
+  # Hugging Face login cell, or HUGGINGFACE_TOKEN in .env). Without that, its splits
+  # fail to download (logged, not fatal) and you'll just get less training data.
   datasets:
+    - name: mozilla-foundation/common_voice_17_0
+      config: sw          # Swahili
+      splits: [train]
     - name: google/fleurs
       config: sw_ke
-      splits: [train, validation, test]
-    # - name: mozilla-foundation/common_voice_17_0
-    #   config: sw          # Swahili
-    #   splits: [train, validation, test]
+      splits: [test]
   sample_rate: 16000
   max_audio_seconds: 30
 
