@@ -23,13 +23,16 @@ data:
   # every dataset's `train` split for training and every dataset's `test` split for
   # eval, so this split split across datasets is what makes that separation work.
   #
-  # Common Voice is GATED: you must (1) accept its terms at
-  # https://huggingface.co/datasets/mozilla-foundation/common_voice_17_0 while logged
-  # in, and (2) authenticate locally/in Colab (`huggingface-cli login`, the notebook's
-  # Hugging Face login cell, or HUGGINGFACE_TOKEN in .env). Without that, its splits
-  # fail to download (logged, not fatal) and you'll just get less training data.
+  # NOTE: as of October 2025, Mozilla pulled the official mozilla-foundation/common_voice_*
+  # datasets off Hugging Face entirely (moved to "Mozilla Data Collective", which isn't
+  # usable via the `datasets` library / download.py's load_dataset() flow). Using
+  # fsicoli/common_voice_15_0 instead — an actively-used community mirror of Common Voice
+  # 15.0 (741GB across 100+ languages, CC-0, ungated, same audio+sentence schema).
+  # If Mozilla ships an API-accessible route through Data Collective later, swap back to
+  # an official source; for now this is the only practical way to get Common Voice
+  # Swahili data through this pipeline.
   datasets:
-    - name: mozilla-foundation/common_voice_17_0
+    - name: fsicoli/common_voice_15_0
       config: sw          # Swahili
       splits: [train]
     - name: google/fleurs
