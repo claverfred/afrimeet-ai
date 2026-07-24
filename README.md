@@ -114,13 +114,19 @@ while data download/prep and everyday development stay local:
 
 To run Phases 3-5 on Colab:
 
-1. Build a code-only zip locally: `python scripts/package_for_colab.py` (writes
-   `dist/afrimeet-ai-code.zip`, excludes data/models/venv).
-2. Upload that zip to Google Drive at `My Drive/AfriMeet_AI/afrimeet-ai-code.zip`.
-3. Open `notebooks/finetune_whisper_colab.ipynb` in Colab (`Runtime -> Change runtime
+1. Open `notebooks/finetune_whisper_colab.ipynb` in Colab (`Runtime -> Change runtime
    type -> GPU`) and run the cells top to bottom.
+2. The code is pulled from this GitHub repo (`REPO_URL` in the config cell). Since the
+   repo is private, the clone cell prompts for a GitHub Personal Access Token
+   (`repo` scope, or a fine-grained token scoped to just this repo) via `getpass` — it's
+   only held in memory for that cell, never written to disk or saved in the notebook.
 
-The notebook doesn't duplicate any pipeline logic — it unpacks the same `afrimeet`
+If you'd rather not use a token, clear `REPO_URL` in the notebook to fall back to a
+Drive-zip instead: run `python scripts/package_for_colab.py` locally (writes
+`dist/afrimeet-ai-code.zip`, excludes data/models/venv) and upload it to
+`My Drive/AfriMeet_AI/afrimeet-ai-code.zip`.
+
+The notebook doesn't duplicate any pipeline logic — it clones the same `afrimeet`
 package and calls the same `scripts/` used locally. Google Drive persists the
 processed dataset and model checkpoints between sessions (Colab's local disk is wiped
 on disconnect); see the notebook's markdown cells for how caching and resuming work.
