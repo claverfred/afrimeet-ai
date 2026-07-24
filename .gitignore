@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
+# dist/ includes dist/afrimeet-ai-code.zip built by scripts/package_for_colab.py
 dist/
 
 # Virtual environments
