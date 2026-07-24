@@ -71,13 +71,27 @@ def main() -> None:
     config = load_config(args.config) if args.config else load_config()
     raw_dir = Path(config["paths"]["data_raw"])
 
+    failures: list[str] = []
+    n_ok = 0
     for dataset_cfg in config["data"]["datasets"]:
         out_dir = raw_dir / dataset_cfg["name"].replace("/", "__")
         for split in dataset_cfg["splits"]:
             try:
                 download_dataset(dataset_cfg["name"], dataset_cfg["config"], split, out_dir)
+                n_ok += 1
             except Exception as exc:  # dataset/network/auth errors shouldn't kill the whole run
                 logger.error(f"Failed to download {dataset_cfg['name']}/{split}: {exc}")
+                failures.append(f"{dataset_cfg['name']}/{split}")
+
+    if n_ok == 0:
+        raise RuntimeError(
+            "Every dataset/split failed to download (see errors above) — nothing was "
+            "written to data/raw. A common cause is a gated dataset (e.g. Common Voice) "
+            "that needs `huggingface_hub.login()` plus accepting its terms on the "
+            "dataset's Hugging Face page first. Failed: " + ", ".join(failures)
+        )
+    if failures:
+        logger.warning(f"{len(failures)} split(s) failed and were skipped: {', '.join(failures)}")
 
 
 if __name__ == "__main__":

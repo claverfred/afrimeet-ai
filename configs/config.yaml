@@ -15,13 +15,21 @@ paths:
 
 data:
   # Hugging Face datasets used for Phase 2 (public data).
+  #
+  # google/fleurs is ungated — downloads with no login. mozilla-foundation/common_voice_17_0
+  # is GATED: you must (1) accept its terms at
+  # https://huggingface.co/datasets/mozilla-foundation/common_voice_17_0 while logged in,
+  # and (2) authenticate locally/in Colab (`huggingface-cli login` or `huggingface_hub.login()`,
+  # or set HUGGINGFACE_TOKEN in .env). Uncomment it below once both are done — until then,
+  # leaving it in the list makes download_data.py fail for that dataset (it logs the error
+  # and continues, so it fails quietly rather than crashing the whole run).
   datasets:
-    - name: mozilla-foundation/common_voice_17_0
-      config: sw          # Swahili
-      splits: [train, validation, test]
     - name: google/fleurs
       config: sw_ke
       splits: [train, validation, test]
+    # - name: mozilla-foundation/common_voice_17_0
+    #   config: sw          # Swahili
+    #   splits: [train, validation, test]
   sample_rate: 16000
   max_audio_seconds: 30
 
