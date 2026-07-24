@@ -116,13 +116,11 @@ To run Phases 3-5 on Colab:
 
 1. Open `notebooks/finetune_whisper_colab.ipynb` in Colab (`Runtime -> Change runtime
    type -> GPU`) and run the cells top to bottom.
-2. The code is pulled from this GitHub repo (`REPO_URL` in the config cell). Since the
-   repo is private, the clone cell prompts for a GitHub Personal Access Token
-   (`repo` scope, or a fine-grained token scoped to just this repo) via `getpass` — it's
-   only held in memory for that cell, never written to disk or saved in the notebook.
+2. The code is cloned straight from this public GitHub repo (`REPO_URL` in the config
+   cell) — no authentication needed.
 
-If you'd rather not use a token, clear `REPO_URL` in the notebook to fall back to a
-Drive-zip instead: run `python scripts/package_for_colab.py` locally (writes
+If you'd rather not clone from GitHub, clear `REPO_URL` in the notebook to fall back to
+a Drive-zip instead: run `python scripts/package_for_colab.py` locally (writes
 `dist/afrimeet-ai-code.zip`, excludes data/models/venv) and upload it to
 `My Drive/AfriMeet_AI/afrimeet-ai-code.zip`.
 
