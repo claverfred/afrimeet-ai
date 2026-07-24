@@ -30,7 +30,8 @@ data:
   # 15.0 (741GB across 100+ languages, CC-0, ungated, same audio+sentence schema).
   # If Mozilla ships an API-accessible route through Data Collective later, swap back to
   # an official source; for now this is the only practical way to get Common Voice
-  # Swahili data through this pipeline.
+  # Swahili data through this pipeline. NOTE: this mirror still ships a legacy Python
+  # loading script, so requirements/ml.txt pins `datasets<3.0` — see the comment there.
   datasets:
     - name: fsicoli/common_voice_15_0
       config: sw          # Swahili

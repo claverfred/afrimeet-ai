@@ -8,7 +8,14 @@
 torch>=2.2
 torchaudio>=2.2
 transformers>=4.40
-datasets>=2.19
+# Pinned <3.0: our Common Voice source (fsicoli/common_voice_*, see configs/config.yaml)
+# still ships a legacy Python loading script, which `datasets` >=3.0 refuses to execute
+# at all (HF's Sept 2024 script-datasets policy change) -- there's currently no
+# already-converted, no-script Common Voice mirror for Swahili. HF Hub still serves the
+# script file itself, so the older client library still works; only the 3.0+ client
+# added the client-side refusal. Revisit this pin if a parquet/audiofolder Common Voice
+# Swahili mirror shows up.
+datasets>=2.19,<3.0
 accelerate>=0.30
 evaluate>=0.4
 jiwer>=3.0            # Word/Character Error Rate
