@@ -49,7 +49,10 @@ def evaluate_model(
 
         reference = example["transcript"]
         wer = jiwer.wer(
-            reference, hypothesis, truth_transform=NORMALIZATION, hypothesis_transform=NORMALIZATION
+            reference,
+            hypothesis,
+            reference_transform=NORMALIZATION,
+            hypothesis_transform=NORMALIZATION,
         )
         cer = jiwer.cer(reference, hypothesis)
 
