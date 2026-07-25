@@ -238,7 +238,7 @@ def main() -> None:
         eval_dataset=dataset["test"],
         data_collator=data_collator,
         compute_metrics=make_compute_metrics(processor),
-        tokenizer=processor.feature_extractor,
+        processing_class=processor.feature_extractor,
         callbacks=callbacks or None,
     )
 
