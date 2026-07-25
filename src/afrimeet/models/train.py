@@ -15,7 +15,7 @@ from typing import Any
 
 import evaluate as hf_evaluate
 import torch
-from datasets import Dataset, DatasetDict
+from datasets import Audio, Dataset, DatasetDict
 from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
@@ -52,25 +52,27 @@ class CheckpointBackupCallback(TrainerCallback):
         logger.info(f"Backed up checkpoint at step {state.global_step} to {target}")
 
 
-def _load_split_as_hf_dataset(manifest_path: Path) -> Dataset:
+def _load_split_as_hf_dataset(manifest_path: Path, sample_rate: int) -> Dataset:
+    """Builds a Dataset that only holds file paths + transcripts in memory. Audio
+    is decoded lazily (per-example, on access) via the `Audio` feature cast below --
+    eagerly loading every waveform into a Python list upfront (the previous approach)
+    holds the whole split in RAM simultaneously, which OOM-kills the process on any
+    dataset larger than a toy one (this is what was killing training with SIGKILL)."""
     import pandas as pd
-    import soundfile as sf
 
     df = pd.read_csv(manifest_path)
     base_dir = manifest_path.parent
 
-    def _load_audio(row):
-        signal, sr = sf.read(base_dir / row["audio_path"], dtype="float32")
-        return {"array": signal, "sampling_rate": sr}
-
-    records = [
-        {"audio": _load_audio(row), "transcript": row["transcript"]} for _, row in df.iterrows()
-    ]
-    return Dataset.from_list(records)
+    audio_paths = [str(base_dir / p) for p in df["audio_path"]]
+    dataset = Dataset.from_dict({"audio": audio_paths, "transcript": df["transcript"].tolist()})
+    return dataset.cast_column("audio", Audio(sampling_rate=sample_rate))
 
 
 def build_dataset(
-    processed_dir: Path, train_split: str = "train", eval_split: str = "test"
+    processed_dir: Path,
+    sample_rate: int,
+    train_split: str = "train",
+    eval_split: str = "test",
 ) -> DatasetDict:
     """Collects every dataset under `data/processed/*/train` (and `*/test`) into a
     single combined HF DatasetDict."""
@@ -85,9 +87,11 @@ def build_dataset(
 
     from datasets import concatenate_datasets
 
-    train_ds = concatenate_datasets([_load_split_as_hf_dataset(p) for p in train_manifests])
+    train_ds = concatenate_datasets(
+        [_load_split_as_hf_dataset(p, sample_rate) for p in train_manifests]
+    )
     eval_ds = (
-        concatenate_datasets([_load_split_as_hf_dataset(p) for p in eval_manifests])
+        concatenate_datasets([_load_split_as_hf_dataset(p, sample_rate) for p in eval_manifests])
         if eval_manifests
         else train_ds.select(range(min(50, len(train_ds))))
     )
@@ -161,7 +165,7 @@ def main() -> None:
     train_cfg = config["training"]
 
     logger.info(f"Base model: {base_model}")
-    dataset = build_dataset(processed_dir)
+    dataset = build_dataset(processed_dir, sample_rate=config["data"]["sample_rate"])
     logger.info(f"Train examples: {len(dataset['train'])}, eval examples: {len(dataset['test'])}")
 
     processor = WhisperProcessor.from_pretrained(base_model, language=language, task=task)
