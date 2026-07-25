@@ -91,11 +91,11 @@ so pip doesn't fall back to the CPU wheel.
 2. **Data collection & preparation** — `src/afrimeet/data/` (`scripts/download_data.py`,
    `scripts/prepare_dataset.py`).
 3. **Baseline modeling** — evaluate pre-trained Whisper (WER/CER) —
-   `scripts/evaluate.py --model openai/whisper-small --run-name baseline`.
+   `scripts/evaluate_model.py --model openai/whisper-small --run-name baseline`.
 4. **Model improvement** — fine-tune Whisper on conference-domain speech —
    `scripts/train.py`.
 5. **Model evaluation** — compare baseline vs. fine-tuned (WER, CER, latency) —
-   `scripts/evaluate.py --model models/finetuned/... --run-name finetuned` then
+   `scripts/evaluate_model.py --model models/finetuned/... --run-name finetuned` then
    `scripts/compare_models.py --runs baseline=... finetuned=...`.
 6. **Deployment** — REST API (`src/afrimeet/api/`), web app (`web/`), live demo.
 
