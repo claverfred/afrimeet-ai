@@ -100,10 +100,25 @@ def build_dataset(
 
 @dataclass
 class WhisperDataCollator:
+    """Converts raw audio to Whisper's mel-spectrogram `input_features` here, per
+    batch, rather than eagerly for the whole dataset up front. Whisper's feature
+    extractor pads every clip to a fixed 30s window regardless of its actual length,
+    so each spectrogram is a fixed ~960KB -- pre-computing that for tens of thousands
+    of examples via `dataset.map()` produces tens of GB and reliably OOM-kills the
+    process before training even starts. Doing it per-batch keeps memory bounded to
+    O(batch_size) regardless of dataset size."""
+
     processor: WhisperProcessor
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
-        input_features = [{"input_features": f["input_features"]} for f in features]
+        input_features = [
+            {
+                "input_features": self.processor.feature_extractor(
+                    f["audio"]["array"], sampling_rate=f["audio"]["sampling_rate"]
+                ).input_features[0]
+            }
+            for f in features
+        ]
         batch = self.processor.feature_extractor.pad(input_features, return_tensors="pt")
 
         label_features = [{"input_ids": f["labels"]} for f in features]
@@ -117,16 +132,16 @@ class WhisperDataCollator:
         return batch
 
 
-def prepare_features(dataset: DatasetDict, processor: WhisperProcessor) -> DatasetDict:
-    def _prepare(example):
-        audio = example["audio"]
-        example["input_features"] = processor.feature_extractor(
-            audio["array"], sampling_rate=audio["sampling_rate"]
-        ).input_features[0]
+def prepare_labels(dataset: DatasetDict, processor: WhisperProcessor) -> DatasetDict:
+    """Tokenizes transcripts into `labels` (cheap, text-only). Audio stays as the lazy
+    `Audio` feature set up in `_load_split_as_hf_dataset` and is only decoded +
+    converted to spectrogram features inside `WhisperDataCollator`, per batch."""
+
+    def _tokenize(example):
         example["labels"] = processor.tokenizer(example["transcript"]).input_ids
         return example
 
-    return dataset.map(_prepare, remove_columns=dataset["train"].column_names, num_proc=1)
+    return dataset.map(_tokenize, remove_columns=["transcript"])
 
 
 def make_compute_metrics(processor: WhisperProcessor):
@@ -169,7 +184,7 @@ def main() -> None:
     logger.info(f"Train examples: {len(dataset['train'])}, eval examples: {len(dataset['test'])}")
 
     processor = WhisperProcessor.from_pretrained(base_model, language=language, task=task)
-    dataset = prepare_features(dataset, processor)
+    dataset = prepare_labels(dataset, processor)
 
     model = WhisperForConditionalGeneration.from_pretrained(base_model)
     model.generation_config.language = language
