@@ -7,7 +7,12 @@
 
 torch>=2.2
 torchaudio>=2.2
-transformers>=4.40
+# Exact-pinned rather than a lower bound: transformers 5.x renamed/removed several
+# Trainer kwargs (e.g. tokenizer= -> processing_class=, verified by reading
+# transformers/trainer.py's source directly for this version). An unbounded
+# `>=` here previously let a fresh `pip install` silently jump major versions
+# mid-project and break afrimeet/models/train.py with no warning.
+transformers==5.14.1
 # Pinned <3.0: our Common Voice source (fsicoli/common_voice_*, see configs/config.yaml)
 # still ships a legacy Python loading script, which `datasets` >=3.0 refuses to execute
 # at all (HF's Sept 2024 script-datasets policy change) -- there's currently no
@@ -18,7 +23,9 @@ transformers>=4.40
 datasets>=2.19,<3.0
 accelerate>=0.30
 evaluate>=0.4
-jiwer>=3.0            # Word/Character Error Rate
+# Exact-pinned: jiwer 4.0 renamed wer()/cer()'s truth_transform kwarg to
+# reference_transform (verified by inspecting the installed 4.0.0 signature directly).
+jiwer==4.0.0
 librosa>=0.10
 soundfile>=0.12
 sacrebleu>=2.4         # BLEU for translation evaluation
