@@ -7,6 +7,8 @@ Uses HF `Seq2SeqTrainer` on top of a manifest-based dataset. Hyperparameters
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,12 +19,37 @@ from datasets import Dataset, DatasetDict
 from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
+    TrainerCallback,
     WhisperForConditionalGeneration,
     WhisperProcessor,
 )
 
 from afrimeet.utils.config import load_config
 from afrimeet.utils.logging import logger
+
+CHECKPOINT_BACKUP_ENV_VAR = "AFRIMEET_CHECKPOINT_BACKUP_DIR"
+
+
+class CheckpointBackupCallback(TrainerCallback):
+    """Copies the checkpoint just saved by the Trainer to a persistent backup
+    directory (e.g. a Google Drive mount in Colab), overwriting the previous
+    backup each time. Protects long unattended runs against the training VM's
+    local disk being lost to a disconnect — see `main()` for how the backup is
+    also used to auto-resume."""
+
+    def __init__(self, backup_dir: str):
+        self.backup_dir = Path(backup_dir)
+
+    def on_save(self, args, state, control, **kwargs):  # noqa: D102
+        checkpoint_dir = Path(args.output_dir) / f"checkpoint-{state.global_step}"
+        if not checkpoint_dir.exists():
+            return
+        target = self.backup_dir / "latest_checkpoint"
+        if target.exists():
+            shutil.rmtree(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(checkpoint_dir, target)
+        logger.info(f"Backed up checkpoint at step {state.global_step} to {target}")
 
 
 def _load_split_as_hf_dataset(manifest_path: Path) -> Dataset:
@@ -160,6 +187,7 @@ def main() -> None:
         eval_strategy="steps",
         eval_steps=train_cfg["eval_steps"],
         save_steps=train_cfg["save_steps"],
+        save_total_limit=train_cfg.get("save_total_limit", 2),
         logging_steps=train_cfg["logging_steps"],
         predict_with_generate=True,
         generation_max_length=225,
@@ -169,6 +197,21 @@ def main() -> None:
         greater_is_better=False,
     )
 
+    # If AFRIMEET_CHECKPOINT_BACKUP_DIR is set (the Colab notebook sets it to a Drive
+    # path), back up each checkpoint there as training progresses, and resume from it
+    # automatically if a backup from an interrupted run is already present -- this is
+    # what protects a long unattended run against the training VM being reclaimed
+    # mid-run (its local disk doesn't survive that, only the Drive backup does).
+    callbacks = []
+    resume_from_checkpoint = None
+    backup_dir = os.environ.get(CHECKPOINT_BACKUP_ENV_VAR)
+    if backup_dir:
+        callbacks.append(CheckpointBackupCallback(backup_dir))
+        candidate = Path(backup_dir) / "latest_checkpoint"
+        if candidate.exists():
+            resume_from_checkpoint = str(candidate)
+            logger.info(f"Found a checkpoint backup at {candidate} — resuming training from it")
+
     trainer = Seq2SeqTrainer(
         args=training_args,
         model=model,
@@ -177,12 +220,18 @@ def main() -> None:
         data_collator=data_collator,
         compute_metrics=make_compute_metrics(processor),
         tokenizer=processor.feature_extractor,
+        callbacks=callbacks or None,
     )
 
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     trainer.save_model(str(output_dir))
     processor.save_pretrained(str(output_dir))
     logger.info(f"Fine-tuned model saved to {output_dir}")
+
+    if backup_dir:
+        # Training finished cleanly -- the mid-run backup has served its purpose and
+        # would otherwise incorrectly trigger a resume on the *next* fresh training run.
+        shutil.rmtree(Path(backup_dir) / "latest_checkpoint", ignore_errors=True)
 
 
 if __name__ == "__main__":
