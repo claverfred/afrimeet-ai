@@ -211,6 +211,12 @@ def main() -> None:
         predict_with_generate=True,
         generation_max_length=225,
         report_to=[],
+        # Required whenever a custom collator does its own preprocessing from a raw
+        # column: Trainer's default column-pruning drops any dataset column that isn't
+        # a named parameter of the model's forward() -- "audio" isn't (only the
+        # *converted* "input_features" is), so it was getting silently stripped before
+        # WhisperDataCollator ever saw it, surfacing as a KeyError('audio') mid-training.
+        remove_unused_columns=False,
         load_best_model_at_end=True,
         metric_for_best_model="wer",
         greater_is_better=False,
