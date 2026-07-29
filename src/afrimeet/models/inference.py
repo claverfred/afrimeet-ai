@@ -20,9 +20,8 @@ class WhisperTranscriber:
         self.model = WhisperForConditionalGeneration.from_pretrained(model_id_or_path)
         self.model.to(self.device)
         self.model.eval()
-        self.forced_decoder_ids = self.processor.get_decoder_prompt_ids(
-            language=language, task=task
-        )
+        self.language = language
+        self.task = task
 
     @torch.inference_mode()
     def transcribe(self, audio: np.ndarray, sample_rate: int = WHISPER_SAMPLE_RATE) -> str:
@@ -35,11 +34,37 @@ class WhisperTranscriber:
             audio = audio.mean(axis=1)  # downmix e.g. stereo to mono
         if sample_rate != WHISPER_SAMPLE_RATE:
             audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=WHISPER_SAMPLE_RATE)
-            sample_rate = WHISPER_SAMPLE_RATE
 
+        # truncation=False + padding="longest" + return_timestamps=True is Whisper's
+        # own documented long-form transcription path (see
+        # WhisperForConditionalGeneration.generate()'s docstring, "Longform
+        # transcription"): audio over 30s is handled by Whisper's internal sequential
+        # timestamp-based algorithm instead of being silently truncated to the first
+        # 30s window (which a plain generate() call on fixed-size, padded/truncated
+        # input_features does -- that was the previous implementation, and it's why
+        # transcriptions of real meeting-length audio were cutting off early). This
+        # also works correctly for audio under 30s, so it's safe to use unconditionally
+        # rather than branching on duration.
+        #
+        # NOTE: transformers.pipeline("automatic-speech-recognition", chunk_length_s=...)
+        # looks like the obvious fix for long audio but is NOT the right tool here --
+        # transformers itself logs a warning that chunk_length_s is "very experimental"
+        # for seq2seq models like Whisper and recommends this generate()-based approach
+        # instead, since Whisper has its own purpose-built long-form algorithm.
         inputs = self.processor(
-            audio, sampling_rate=sample_rate, return_tensors="pt"
-        ).input_features.to(self.device)
-        predicted_ids = self.model.generate(inputs, forced_decoder_ids=self.forced_decoder_ids)
+            audio,
+            sampling_rate=WHISPER_SAMPLE_RATE,
+            return_tensors="pt",
+            truncation=False,
+            padding="longest",
+            return_attention_mask=True,
+        ).to(self.device)
+
+        predicted_ids = self.model.generate(
+            **inputs,
+            language=self.language,
+            task=self.task,
+            return_timestamps=True,
+        )
         text = self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
         return text.strip()
