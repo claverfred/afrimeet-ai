@@ -47,6 +47,7 @@ AfriMeet AI/
 ├── tests/                    # Unit tests (pytest)
 ├── web/                      # Frontend (React/Next.js) — added in a later phase
 ├── .env.example              # Template for local secrets/config
+├── Dockerfile                # Phase 6 API container (models/ mounted, not baked in)
 ├── pyproject.toml            # Package metadata + tool config (black/ruff/isort/pytest)
 └── requirements.txt           # Convenience: installs everything
 ```
@@ -97,7 +98,8 @@ so pip doesn't fall back to the CPU wheel.
 5. **Model evaluation** — compare baseline vs. fine-tuned (WER, CER, latency) —
    `scripts/evaluate_model.py --model models/finetuned/... --run-name finetuned` then
    `scripts/compare_models.py --runs baseline=... finetuned=...`.
-6. **Deployment** — REST API (`src/afrimeet/api/`), web app (`web/`), live demo.
+6. **Deployment** — REST API (`src/afrimeet/api/`), web app (`web/`), live demo. See
+   "Running the API" below.
 
 ## Hybrid local / Colab workflow
 
@@ -128,6 +130,47 @@ The notebook doesn't duplicate any pipeline logic — it clones the same `afrime
 package and calls the same `scripts/` used locally. Google Drive persists the
 processed dataset and model checkpoints between sessions (Colab's local disk is wiped
 on disconnect); see the notebook's markdown cells for how caching and resuming work.
+
+## Running the API (Phase 6)
+
+The API (`src/afrimeet/api/main.py`) serves whichever model is available: the
+fine-tuned model if present locally, otherwise the pre-trained baseline (see
+`resolve_model_path()`). Check which one is active via `GET /health`.
+
+**Getting the fine-tuned model onto this machine.** Training happens in Colab
+(see above), which backs the result up to Google Drive at
+`My Drive/AfriMeet_AI/models_finetuned.zip` — it never lands in this repo (multi-GB
+binaries don't belong in git). Download that file and unzip it into `models/finetuned/`
+so the layout matches `configs/config.yaml`'s `whisper.finetuned_model_name`:
+
+```
+models/finetuned/afrimeet-whisper-small-sw-en/
+├── config.json
+├── model.safetensors
+├── preprocessor_config.json
+└── ...
+```
+
+**Run locally** (after the [Setup](#setup) steps above, including `requirements/ml.txt`
+and `requirements/api.txt`):
+
+```bash
+uvicorn afrimeet.api.main:app --reload
+```
+
+**Run with Docker** (doesn't bake data/models into the image — mount them instead):
+
+```bash
+docker build -t afrimeet-ai-api .
+docker run -p 8000:8000 -v "$(pwd)/models:/app/models" afrimeet-ai-api
+```
+
+**Try it:**
+
+```bash
+curl http://localhost:8000/health
+curl -F "file=@sample.wav" http://localhost:8000/transcribe
+```
 
 ## Running tests
 

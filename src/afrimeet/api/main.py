@@ -1,7 +1,10 @@
 """Phase 6 — minimal REST API exposing the ASR model.
 
 Run with: uvicorn afrimeet.api.main:app --reload
-Requires requirements/ml.txt and requirements/api.txt to be installed.
+Requires requirements/ml.txt and requirements/api.txt to be installed. The
+fine-tuned model produced by Phase 4 (trained in Colab) isn't in this repo --
+see README.md for how to get it from Google Drive onto whatever machine runs
+this API.
 
 This is intentionally small: one health check and one transcription endpoint.
 Translation, diarization, summarization, and RAG search are separate modules
@@ -13,6 +16,7 @@ from __future__ import annotations
 
 import io
 from functools import lru_cache
+from pathlib import Path
 
 import soundfile as sf
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -28,18 +32,34 @@ app = FastAPI(
 )
 
 
+def resolve_model_path(config: dict) -> tuple[str, bool]:
+    """Picks the fine-tuned model if it's present locally (real weight file, not
+    just an empty directory), otherwise falls back to the pre-trained baseline.
+    Returns (model_id_or_path, is_finetuned)."""
+    finetuned_name = config["whisper"]["finetuned_model_name"]
+    finetuned_dir = Path(config["paths"]["models_finetuned"]) / finetuned_name
+    has_weights = any(finetuned_dir.glob("model.safetensors")) or any(
+        finetuned_dir.glob("pytorch_model.bin")
+    )
+    if has_weights:
+        return str(finetuned_dir), True
+    return config["whisper"]["baseline_model"], False
+
+
 @lru_cache(maxsize=1)
 def get_transcriber() -> WhisperTranscriber:
     config = load_config()
-    model_id = config["whisper"]["baseline_model"]
+    model_id, is_finetuned = resolve_model_path(config)
     language = config["whisper"]["language"]
-    logger.info(f"Loading ASR model for API: {model_id}")
+    logger.info(f"Loading ASR model for API: {model_id} (fine-tuned: {is_finetuned})")
     return WhisperTranscriber(model_id, language=language)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    config = load_config()
+    model_id, is_finetuned = resolve_model_path(config)
+    return {"status": "ok", "model": model_id, "finetuned": is_finetuned}
 
 
 @app.post("/transcribe")
