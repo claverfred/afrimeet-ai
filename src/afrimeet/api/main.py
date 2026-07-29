@@ -64,9 +64,11 @@ def health() -> dict:
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile) -> dict:
-    if file.content_type not in (None, "") and not file.content_type.startswith("audio"):
-        raise HTTPException(status_code=400, detail="Expected an audio file upload.")
-
+    # No content_type gate here: many HTTP clients send application/octet-stream (or
+    # omit it) for perfectly valid audio, which caused real uploads to be rejected.
+    # sf.read() below is the actual, authoritative validation -- it decodes real audio
+    # and cleanly rejects anything that isn't, so a separate content_type pre-check is
+    # both redundant and a source of false rejections.
     raw_bytes = await file.read()
     try:
         audio, sample_rate = sf.read(io.BytesIO(raw_bytes), dtype="float32")
