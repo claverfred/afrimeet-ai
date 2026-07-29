@@ -137,5 +137,7 @@ pytest
 
 ## Status
 
-Project scaffold, data pipeline, and baseline evaluation are in progress. See
-open todos in the repository issue tracker / commit history for current phase.
+Phases 1-5 are complete: see [`reports/results.md`](reports/results.md) for the
+baseline-vs-fine-tuned Whisper evaluation results and discussion. Phase 6
+(API/deployment) and the translation/diarization/summarization modules are in
+progress — see commit history for current work.
