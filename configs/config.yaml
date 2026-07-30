@@ -14,6 +14,14 @@ paths:
   reports_figures: reports/figures
 
 data:
+  # Bump this whenever a change here (or in afrimeet.data.preprocess's cleaning logic)
+  # changes what ends up in data/processed/ -- prepare_dataset.py stamps it into
+  # data/processed/_schema_version.txt, and the Colab notebook's Drive-cache restore
+  # checks it before trusting a cached data_processed.zip. Without this, a cache from
+  # before a pipeline change looks structurally valid (manifests exist) but silently
+  # contains stale content -- e.g. transcripts from before punctuation was preserved.
+  schema_version: 2
+
   # Hugging Face datasets used for Phase 2 (public data).
   #
   # Common Voice supplies training volume/diversity (crowdsourced, many speakers).
@@ -32,6 +40,13 @@ data:
   # an official source; for now this is the only practical way to get Common Voice
   # Swahili data through this pipeline. NOTE: this mirror still ships a legacy Python
   # loading script, so requirements/ml.txt pins `datasets<3.0` — see the comment there.
+  #
+  # text_column overrides afrimeet.data.download's auto-detected text column.
+  # FLEURS exposes two: `transcription` (lowercase, punctuation mostly stripped -- the
+  # auto-detected default) and `raw_transcription` (original casing + full punctuation).
+  # We want the model to learn to produce real punctuation, so FLEURS is pinned to
+  # raw_transcription explicitly. Common Voice's `sentence` field already has proper
+  # casing/punctuation from its source text, so no override is needed there.
   datasets:
     - name: fsicoli/common_voice_15_0
       config: sw          # Swahili
@@ -39,6 +54,7 @@ data:
     - name: google/fleurs
       config: sw_ke
       splits: [test]
+      text_column: raw_transcription
   sample_rate: 16000
   max_audio_seconds: 30
 

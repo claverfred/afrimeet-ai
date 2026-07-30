@@ -22,9 +22,12 @@ MIN_DURATION_S = 1.0
 
 
 def clean_transcript(text: str) -> str:
-    """Lowercase, strip punctuation noise, and collapse whitespace."""
-    text = text.strip().lower()
-    text = re.sub(r"[^\w\s'-]", "", text, flags=re.UNICODE)
+    """Collapse whitespace only. Punctuation and casing are deliberately preserved --
+    the model should learn to produce them (a plain ASR model that never sees
+    punctuation in training targets can't output it either); see
+    configs/config.yaml's `text_column` overrides for choosing an already-punctuated
+    source field per dataset where one is available (e.g. FLEURS' raw_transcription)."""
+    text = text.strip()
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -93,6 +96,10 @@ def main() -> None:
                 logger.warning(f"Skipping missing raw split: {raw_split_dir}")
                 continue
             process_split(raw_split_dir, processed_split_dir, sample_rate, max_duration_s)
+
+    schema_version = str(config["data"].get("schema_version", "unknown"))
+    (processed_dir / "_schema_version.txt").write_text(schema_version, encoding="utf-8")
+    logger.info(f"Stamped data/processed with schema_version={schema_version}")
 
 
 if __name__ == "__main__":

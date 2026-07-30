@@ -18,9 +18,17 @@ from afrimeet.utils.config import load_config
 from afrimeet.utils.logging import logger
 
 
-def download_dataset(name: str, config_name: str, split: str, out_dir: Path) -> Path:
+def download_dataset(
+    name: str, config_name: str, split: str, out_dir: Path, text_column: str | None = None
+) -> Path:
     """Download one (dataset, config, split) and materialize it as
     `out_dir/<split>/audio/*.wav` + `out_dir/<split>/manifest.csv`.
+
+    `text_column`, if given, overrides auto-detection -- needed for datasets like
+    FLEURS that expose multiple text columns with different normalization (its
+    `transcription` is lowercased with punctuation mostly stripped; `raw_transcription`
+    keeps original casing and punctuation, which is what we want the model to learn to
+    produce).
 
     Returns the path to the written manifest.
     """
@@ -34,7 +42,7 @@ def download_dataset(name: str, config_name: str, split: str, out_dir: Path) -> 
     audio_dir = split_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
 
-    text_column = _guess_text_column(ds.column_names)
+    text_column = text_column or _guess_text_column(ds.column_names)
     rows = []
     for i, example in enumerate(ds):
         audio = example["audio"]
@@ -77,7 +85,13 @@ def main() -> None:
         out_dir = raw_dir / dataset_cfg["name"].replace("/", "__")
         for split in dataset_cfg["splits"]:
             try:
-                download_dataset(dataset_cfg["name"], dataset_cfg["config"], split, out_dir)
+                download_dataset(
+                    dataset_cfg["name"],
+                    dataset_cfg["config"],
+                    split,
+                    out_dir,
+                    text_column=dataset_cfg.get("text_column"),
+                )
                 n_ok += 1
             except Exception as exc:  # dataset/network/auth errors shouldn't kill the whole run
                 logger.error(f"Failed to download {dataset_cfg['name']}/{split}: {exc}")
