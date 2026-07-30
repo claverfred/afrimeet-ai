@@ -16,12 +16,11 @@ from __future__ import annotations
 
 import io
 from functools import lru_cache
-from pathlib import Path
 
 import soundfile as sf
 from fastapi import FastAPI, HTTPException, UploadFile
 
-from afrimeet.models.inference import WhisperTranscriber
+from afrimeet.models.inference import WhisperTranscriber, resolve_model_path
 from afrimeet.utils.config import load_config
 from afrimeet.utils.logging import logger
 
@@ -30,20 +29,6 @@ app = FastAPI(
     description="Multilingual meeting assistant with domain-adaptive speech recognition.",
     version="0.1.0",
 )
-
-
-def resolve_model_path(config: dict) -> tuple[str, bool]:
-    """Picks the fine-tuned model if it's present locally (real weight file, not
-    just an empty directory), otherwise falls back to the pre-trained baseline.
-    Returns (model_id_or_path, is_finetuned)."""
-    finetuned_name = config["whisper"]["finetuned_model_name"]
-    finetuned_dir = Path(config["paths"]["models_finetuned"]) / finetuned_name
-    has_weights = any(finetuned_dir.glob("model.safetensors")) or any(
-        finetuned_dir.glob("pytorch_model.bin")
-    )
-    if has_weights:
-        return str(finetuned_dir), True
-    return config["whisper"]["baseline_model"], False
 
 
 @lru_cache(maxsize=1)

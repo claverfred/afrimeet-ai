@@ -82,6 +82,13 @@ def main() -> None:
     failures: list[str] = []
     n_ok = 0
     for dataset_cfg in config["data"]["datasets"]:
+        if dataset_cfg.get("local"):
+            # e.g. the `custom` dataset (see afrimeet.data.custom_dataset) -- its raw
+            # files are placed directly under data/raw/, not fetched from HF Hub.
+            logger.info(f"Skipping download for local dataset '{dataset_cfg['name']}'")
+            n_ok += 1
+            continue
+
         out_dir = raw_dir / dataset_cfg["name"].replace("/", "__")
         for split in dataset_cfg["splits"]:
             try:

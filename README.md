@@ -101,6 +101,43 @@ so pip doesn't fall back to the CPU wheel.
 6. **Deployment** — REST API (`src/afrimeet/api/`), web app (`web/`), live demo. See
    "Running the API" below.
 
+## Custom Dataset (real conference/institutional recordings)
+
+The concept note's Phase 2 plan includes real conference/institutional recordings
+alongside the public Common Voice/FLEURS data, since it's more representative of the
+actual target domain. A long recording can't be corrected as one giant transcript or
+trained on as one giant clip, so this is a two-step, human-in-the-loop workflow:
+
+```bash
+# 1. Auto-segment a long recording into short clips with draft transcripts, using the
+#    current model's own predicted segment boundaries.
+python scripts/segment_for_correction.py --audio path/to/meeting.wav
+# -> data/external/custom_review/meeting/audio/0000.wav, 0001.wav, ...
+# -> data/external/custom_review/meeting/manifest_draft.csv
+
+# 2. Open manifest_draft.csv in a spreadsheet. Listen to each clip (audio_path column)
+#    and correct the 'corrected_transcript' column where the draft is wrong -- it's
+#    pre-filled with the draft so you're editing mistakes, not transcribing from
+#    scratch. Leave corrected_transcript blank on rows you haven't reviewed yet; they
+#    get skipped rather than silently treated as correct.
+
+# 3. Ingest the corrected manifest into the normal pipeline.
+python scripts/ingest_custom_dataset.py --manifest data/external/custom_review/meeting/manifest_draft.csv
+```
+
+Then add a `custom` entry to `configs/config.yaml`'s `data.datasets` (if not already
+there) so `download_data.py` knows to skip trying to fetch it from Hugging Face:
+
+```yaml
+    - name: custom
+      local: true       # raw files already exist under data/raw/custom -- nothing to download
+      splits: [train]
+```
+
+Bump `data.schema_version` (forces a rebuild instead of reusing stale cached data —
+see the comment above it) and re-run `scripts/prepare_dataset.py`, or just re-run the
+Colab notebook; its data cell detects the version bump automatically.
+
 ## Hybrid local / Colab workflow
 
 Fine-tuning Whisper on CPU is impractically slow, so GPU-heavy phases run on Colab
