@@ -34,6 +34,14 @@ models/finetuned/*
 *.ckpt
 *.safetensors
 
+# Audio scratch files (e.g. source recordings for scripts/segment_for_correction.py) --
+# never belongs in git regardless of where it's dropped; real data lives under data/.
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+
 # Reports / generated artifacts
 reports/figures/*
 reports/metrics/*

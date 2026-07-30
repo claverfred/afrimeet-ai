@@ -7,7 +7,60 @@ pytest.importorskip("torch")  # afrimeet.data.custom_dataset imports WhisperTran
 np = pytest.importorskip("numpy")
 sf = pytest.importorskip("soundfile")
 
-from afrimeet.data.custom_dataset import ingest_corrected_manifest  # noqa: E402
+from afrimeet.data.custom_dataset import (  # noqa: E402
+    _transcribe_full_coverage,
+    ingest_corrected_manifest,
+)
+
+
+class _StoppingEarlyFakeTranscriber:
+    """Simulates Whisper's observed behavior: a call can stop short of the audio it
+    was given, requiring _transcribe_full_coverage to resume from where it left off."""
+
+    def __init__(self, responses: list[list[dict]]):
+        self._responses = list(responses)
+        self.call_lengths: list[int] = []
+
+    def transcribe_segments(self, audio, sample_rate):
+        self.call_lengths.append(len(audio))
+        return self._responses.pop(0)
+
+
+def test_transcribe_full_coverage_resumes_after_early_stop():
+    sample_rate = 16_000
+    audio = np.zeros(10 * sample_rate, dtype="float32")  # 10s total
+
+    transcriber = _StoppingEarlyFakeTranscriber(
+        [
+            [{"start": 0.0, "end": 3.0, "text": "first chunk"}],  # stops early, 3s of 10s
+            [{"start": 0.0, "end": 7.0, "text": "second chunk"}],  # rest, relative to its own slice
+        ]
+    )
+
+    segments = _transcribe_full_coverage(transcriber, audio)
+
+    assert len(transcriber.call_lengths) == 2  # resumed exactly once, then reached the end
+    assert segments == [
+        {"start": 0.0, "end": 3.0, "text": "first chunk"},
+        {"start": 3.0, "end": 10.0, "text": "second chunk"},  # offset by where call 1 stopped
+    ]
+
+
+def test_transcribe_full_coverage_skips_ahead_on_empty_response():
+    sample_rate = 16_000
+    audio = np.zeros(5 * sample_rate, dtype="float32")
+
+    transcriber = _StoppingEarlyFakeTranscriber(
+        [
+            [],  # nothing returned at all -- must not loop forever
+            [{"start": 0.0, "end": 4.0, "text": "recovered"}],
+        ]
+    )
+
+    segments = _transcribe_full_coverage(transcriber, audio)
+
+    assert len(transcriber.call_lengths) == 2
+    assert segments == [{"start": 1.0, "end": 5.0, "text": "recovered"}]
 
 
 def test_ingest_corrected_manifest_skips_uncorrected_rows(tmp_path: Path):

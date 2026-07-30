@@ -26,6 +26,64 @@ import soundfile as sf
 from afrimeet.models.inference import WHISPER_SAMPLE_RATE, WhisperTranscriber
 from afrimeet.utils.logging import logger
 
+# How far to skip ahead if a call to transcribe_segments() returns nothing at all for
+# the current position (see _transcribe_full_coverage) -- small enough to not lose
+# much audio, large enough to make guaranteed forward progress.
+_STALL_SKIP_S = 1.0
+
+
+def _transcribe_full_coverage(transcriber: WhisperTranscriber, prepared_audio) -> list[dict]:
+    """Repeatedly calls transcriber.transcribe_segments(), resuming from wherever the
+    previous call's last segment ended, until the whole audio is covered.
+
+    Whisper's long-form decoding was empirically observed to sometimes stop well short
+    of the actual end of the audio, and *not* as a function of total duration: a full
+    900s recording stopped at 213s, but a fresh, independent 300s chunk from later in
+    the same file also stopped early (at just 30s) -- while an isolated short clip of
+    the "missed" audio transcribed cleanly on its own. That points to a specific
+    segment occasionally failing Whisper's internal quality checks (e.g. compression
+    ratio / log-probability thresholds) and the long-form loop giving up entirely
+    rather than skipping past just that segment. A fixed chunk size can't reliably
+    avoid this since it can happen at any point; resuming from the actual last-covered
+    timestamp and retrying handles it regardless of why any given call stopped early.
+    """
+    all_segments: list[dict] = []
+    cursor_sample = 0
+    total_samples = len(prepared_audio)
+
+    while cursor_sample < total_samples:
+        offset_s = cursor_sample / WHISPER_SAMPLE_RATE
+        logger.info(
+            f"  transcribing from {offset_s:.0f}s "
+            f"(of {total_samples / WHISPER_SAMPLE_RATE:.0f}s total) ..."
+        )
+        segments = transcriber.transcribe_segments(
+            prepared_audio[cursor_sample:], WHISPER_SAMPLE_RATE
+        )
+
+        if not segments:
+            logger.warning(
+                f"  no segments returned at {offset_s:.0f}s; skipping ahead {_STALL_SKIP_S}s."
+            )
+            cursor_sample += int(_STALL_SKIP_S * WHISPER_SAMPLE_RATE)
+            continue
+
+        for seg in segments:
+            all_segments.append(
+                {
+                    "start": seg["start"] + offset_s,
+                    "end": seg["end"] + offset_s,
+                    "text": seg["text"],
+                }
+            )
+
+        advanced_samples = int(segments[-1]["end"] * WHISPER_SAMPLE_RATE)
+        if advanced_samples <= 0:  # safety net against a zero-length segment looping forever
+            advanced_samples = int(_STALL_SKIP_S * WHISPER_SAMPLE_RATE)
+        cursor_sample += advanced_samples
+
+    return all_segments
+
 
 def segment_for_correction(
     audio_path: str | Path,
@@ -50,7 +108,7 @@ def segment_for_correction(
     prepared = transcriber.prepare_audio(signal, sample_rate)  # downmixed + resampled to 16kHz
 
     logger.info(f"Transcribing {audio_path} to find segment boundaries (this can take a while) ...")
-    segments = transcriber.transcribe_segments(prepared, WHISPER_SAMPLE_RATE)
+    segments = _transcribe_full_coverage(transcriber, prepared)
     if not segments:
         raise RuntimeError(
             f"No segments detected in {audio_path} -- the model produced no timestamped "
