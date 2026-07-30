@@ -63,6 +63,25 @@ def test_transcribe_full_coverage_skips_ahead_on_empty_response():
     assert segments == [{"start": 1.0, "end": 5.0, "text": "recovered"}]
 
 
+def test_transcribe_full_coverage_backs_off_exponentially_on_repeated_stalls():
+    sample_rate = 16_000
+    audio = np.zeros(20 * sample_rate, dtype="float32")
+
+    transcriber = _StoppingEarlyFakeTranscriber(
+        [
+            [],  # stall 1: skip 1.0s   (cursor -> 1.0s)
+            [],  # stall 2: skip 2.0s   (cursor -> 3.0s)
+            [],  # stall 3: skip 4.0s   (cursor -> 7.0s)
+            [{"start": 0.0, "end": 13.0, "text": "recovered"}],  # covers the rest
+        ]
+    )
+
+    segments = _transcribe_full_coverage(transcriber, audio)
+
+    assert len(transcriber.call_lengths) == 4
+    assert segments == [{"start": 7.0, "end": 20.0, "text": "recovered"}]
+
+
 def test_ingest_corrected_manifest_skips_uncorrected_rows(tmp_path: Path):
     source_dir = tmp_path / "review"
     audio_dir = source_dir / "audio"

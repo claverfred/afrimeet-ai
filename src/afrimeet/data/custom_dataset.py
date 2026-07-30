@@ -28,8 +28,13 @@ from afrimeet.utils.logging import logger
 
 # How far to skip ahead if a call to transcribe_segments() returns nothing at all for
 # the current position (see _transcribe_full_coverage) -- small enough to not lose
-# much audio, large enough to make guaranteed forward progress.
+# much audio on a single bad segment, large enough to make guaranteed forward
+# progress. Doubles on each *consecutive* stall (capped at _MAX_STALL_SKIP_S) so a
+# genuinely silent/no-speech tail resolves in a handful of calls instead of one full
+# (slow) generate() attempt per second -- observed on a real 900s recording, whose
+# last ~29s were legitimately silent and cost ~29 separate retries before this.
 _STALL_SKIP_S = 1.0
+_MAX_STALL_SKIP_S = 30.0
 
 
 def _transcribe_full_coverage(transcriber: WhisperTranscriber, prepared_audio) -> list[dict]:
@@ -50,6 +55,7 @@ def _transcribe_full_coverage(transcriber: WhisperTranscriber, prepared_audio) -
     all_segments: list[dict] = []
     cursor_sample = 0
     total_samples = len(prepared_audio)
+    stall_skip_s = _STALL_SKIP_S
 
     while cursor_sample < total_samples:
         offset_s = cursor_sample / WHISPER_SAMPLE_RATE
@@ -63,10 +69,13 @@ def _transcribe_full_coverage(transcriber: WhisperTranscriber, prepared_audio) -
 
         if not segments:
             logger.warning(
-                f"  no segments returned at {offset_s:.0f}s; skipping ahead {_STALL_SKIP_S}s."
+                f"  no segments returned at {offset_s:.0f}s; skipping ahead {stall_skip_s:.0f}s."
             )
-            cursor_sample += int(_STALL_SKIP_S * WHISPER_SAMPLE_RATE)
+            cursor_sample += int(stall_skip_s * WHISPER_SAMPLE_RATE)
+            stall_skip_s = min(stall_skip_s * 2, _MAX_STALL_SKIP_S)
             continue
+
+        stall_skip_s = _STALL_SKIP_S  # reset backoff after any successful call
 
         for seg in segments:
             all_segments.append(
