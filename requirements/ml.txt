@@ -21,6 +21,10 @@ transformers==5.14.1
 # added the client-side refusal. Revisit this pin if a parquet/audiofolder Common Voice
 # Swahili mirror shows up.
 datasets>=2.19,<3.0
+# datasets depends on aiohttp with no floor of its own; without a constraint here pip's
+# resolver picked aiohttp 1.0.5 (~2015) in one local install, which fails to import
+# entirely on modern Python (`asyncio.async` was removed). Floor it explicitly.
+aiohttp>=3.9
 accelerate>=0.30
 evaluate>=0.4
 # Exact-pinned: jiwer 4.0 renamed wer()/cer()'s truth_transform kwarg to
